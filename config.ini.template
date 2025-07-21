@@ -1,0 +1,35 @@
+[MQTT]
+host = mqtt.example.com
+port = 1883
+username = your_username
+password = mqtt_password
+
+[MAIN]
+sleep_interval = 60
+
+[sensor_ds18b20_1]
+type = ds18b20
+topic = sensor/ds18b20_1
+device_name = DS18B20 Sensor 1
+unique_id = ds18b20_sensor_1_unique_id
+discovery_prefix = homeassistant
+sensor_file = /sys/bus/w1/devices/28-XXXXXXXXXXXX/w1_slave
+interval = 60
+
+[sensor_dht22_1]
+type = dht22
+topic = sensor/dht22_1
+device_name = DHT22 Sensor 1
+unique_id = dht22_sensor_1_unique_id
+discovery_prefix = homeassistant
+pin = 4
+interval = 60
+
+[sensor_bme280_1]
+type = bme280
+topic = sensor/bme280_1
+device_name = BME280 Sensor 1
+unique_id = bme280_sensor_1_unique_id
+discovery_prefix = homeassistant
+i2c_address = 0x76
+interval = 60

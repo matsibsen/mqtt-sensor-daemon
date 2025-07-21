@@ -1,0 +1,17 @@
+[Unit]
+Description=MQTT Sensor Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/bin/test-mqtt-daemon
+ExecStart=/usr/bin/python3 /home/pi/bin/test-mqtt-daemon/mqtt-sensor-daemon.py /home/pi/bin/test-mqtt-daemon/config.ini
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
