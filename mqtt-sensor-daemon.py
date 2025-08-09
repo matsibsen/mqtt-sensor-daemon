@@ -4,6 +4,7 @@ import json
 import time
 import socket
 import configparser
+import re, unicodedata
 
 import paho.mqtt.client as mqtt
 import adafruit_dht
@@ -15,7 +16,11 @@ def get_hostname():
     return socket.gethostname()
 
 def format_device_name(name):
-    return name.lower().replace(' ', '_')
+    s = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    s = s.lower().replace(' ', '_')
+    s = re.sub(r'[^a-z0-9_]', '_', s)
+    s = re.sub(r'__+', '_', s).strip('_')
+    return s
 
 def read_config(config_file):
     cfg = configparser.ConfigParser()
