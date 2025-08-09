@@ -112,6 +112,7 @@ def publish_discovery(client, section, cfg, hostname):
                     "humidity": "humidity",
                     "pressure": "pressure"
                 }[key],
+                "state_class": "measurement",
                 "value_template": f"{{{{ value_json.{key} }}}}",
                 "unique_id": f"{unique_base}_{key}",
                 "device": device
@@ -126,6 +127,8 @@ def publish_discovery(client, section, cfg, hostname):
             "state_topic": state_topic,
             "unit_of_measurement": params.get("unit_of_measurement", "°C"),
             "device_class": params.get("device_class", "temperature"),
+            "state_class": "measurement",
+            "value_template": "{{ value_json.temperature }}",
             "unique_id": unique_base,
             "device": device
         }
