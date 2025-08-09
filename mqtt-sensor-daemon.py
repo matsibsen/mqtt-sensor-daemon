@@ -6,8 +6,10 @@ import socket
 import configparser
 
 import paho.mqtt.client as mqtt
-import Adafruit_DHT
+import adafruit_dht
 import board, busio, adafruit_bme280
+
+_DHT_CACHE = {}
 
 def get_hostname():
     return socket.gethostname()
@@ -20,6 +22,9 @@ def read_config(config_file):
     cfg.read(config_file)
     return cfg
 
+def _board_pin_from_bcm(bcm_pin):
+    return getattr(board, f"D{int(bcm_pin)}")
+
 def read_sensor_data(sensor_type, params):
     """Returnerar ett dict med mätvärden."""
     try:
@@ -31,11 +36,17 @@ def read_sensor_data(sensor_type, params):
             return {"temperature": round(temp, 2)}
 
         elif sensor_type == "dht22":
-            pin = int(params.get("pin", 4))
-            hum, temp = Adafruit_DHT.read_retry(Adafruit_DHT.DHT22, pin)
+            bcm = int(params.get("pin", 4))
+            if bcm not in _DHT_CACHE:
+                _DHT_CACHE[bcm] = adafruit_dht.DHT22(_board_pin_from_bcm(bcm), use_pulseio=False)
+            dht = _DHT_CACHE[bcm]
+            temp = dht.temperature
+            hum = dht.humidity
+            if temp is None or hum is None:
+                return None
             return {
-                "temperature": round(temp, 2),
-                "humidity": round(hum, 2)
+                "temperature": round(float(temp), 2),
+                "humidity": round(float(hum), 2)
             }
 
         elif sensor_type == "bme280":
@@ -58,7 +69,6 @@ def publish_discovery(client, section, cfg, hostname):
     dev_name = format_device_name(params["device_name"])
     state_topic = params.get("topic", f"{hostname}/{dev_name}/state")
 
-    # Basen för "device"-blocket i HA
     device = {
         "identifiers": [hostname],
         "name": params["device_name"],
@@ -69,9 +79,8 @@ def publish_discovery(client, section, cfg, hostname):
     sensor_type = params.get("type", "ds18b20")
     unique_base = params.get("unique_id", dev_name)
 
-    # Om multivärdig, skickar vi JSON och skapar flera sensors i HA
     if sensor_type in ("dht22", "bme280"):
-        data_keys = list(read_sensor_data(sensor_type, params).keys())
+        data_keys = ["temperature", "humidity"] if sensor_type == "dht22" else ["temperature", "humidity", "pressure"]
         for key in data_keys:
             cfg_msg = {
                 "name": f"{params['device_name']} {key}",
@@ -95,7 +104,6 @@ def publish_discovery(client, section, cfg, hostname):
             print(f"Discovery → {disc_topic}: {cfg_msg}")
 
     else:
-        # Enkelt fall: bara temperatur
         cfg_msg = {
             "name": params["device_name"],
             "state_topic": state_topic,
