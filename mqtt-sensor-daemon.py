@@ -25,6 +25,23 @@ def read_config(config_file):
 def _board_pin_from_bcm(bcm_pin):
     return getattr(board, f"D{int(bcm_pin)}")
 
+def build_device(cfg, hostname):
+    dev = cfg["DEVICE"] if "DEVICE" in cfg else {}
+    name = dev.get("name", hostname)
+    model = dev.get("model", "Raspberry Pi")
+    manufacturer = dev.get("manufacturer", "Your Manufacturer")
+    identifiers = [x.strip() for x in dev.get("identifiers", hostname).split(",")]
+    sw_version = dev.get("sw_version", "").strip()
+    d = {
+        "identifiers": identifiers,
+        "name": name,
+        "model": model,
+        "manufacturer": manufacturer
+    }
+    if sw_version:
+        d["sw_version"] = sw_version
+    return d
+
 def read_sensor_data(sensor_type, params):
     try:
         if sensor_type == "ds18b20":
@@ -75,14 +92,7 @@ def publish_discovery(client, section, cfg, hostname):
     prefix = params.get("discovery_prefix", "homeassistant")
     dev_name = format_device_name(params["device_name"])
     state_topic = params.get("topic", f"{hostname}/{dev_name}/state")
-
-    device = {
-        "identifiers": [hostname],
-        "name": params["device_name"],
-        "model": params.get("type", "unknown"),
-        "manufacturer": params.get("manufacturer", "Your Manufacturer")
-    }
-
+    device = build_device(cfg, hostname)
     sensor_type = params.get("type", "ds18b20")
     unique_base = params.get("unique_id", dev_name)
 

@@ -7,6 +7,13 @@ password = mqtt_password
 [MAIN]
 sleep_interval = 60
 
+[DEVICE]
+name = ThermalPi
+model = Raspberry Pi 4B
+manufacturer = Raspberry Pi Foundation
+sw_version = mqtt-sensor-daemon 1.0
+identifiers = ThermalPi
+
 [sensor_ds18b20_1]
 type = ds18b20
 topic = sensor/ds18b20_1
