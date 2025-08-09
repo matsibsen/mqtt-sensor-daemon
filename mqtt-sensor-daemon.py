@@ -31,9 +31,17 @@ def read_sensor_data(sensor_type, params):
         if sensor_type == "ds18b20":
             sensor_file = params["sensor_file"]
             with open(sensor_file, "r") as f:
-                temp_str = f.read()
-            temp = float(temp_str) / 1000.0
-            return {"temperature": round(temp, 2)}
+                content = f.read().strip()
+            if "t=" in content:
+                milli_c = int(content.rsplit("t=", 1)[1])
+                temp = milli_c / 1000.0
+            else:
+                val = float(content)
+                temp = val / 1000.0 if abs(val) > 170 else val
+            return {
+                "temperature": round(temp, 2)
+            }
+
 
         elif sensor_type == "dht22":
             bcm = int(params.get("pin", 4))
