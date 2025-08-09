@@ -26,7 +26,6 @@ def _board_pin_from_bcm(bcm_pin):
     return getattr(board, f"D{int(bcm_pin)}")
 
 def read_sensor_data(sensor_type, params):
-    """Returnerar ett dict med mätvärden."""
     try:
         if sensor_type == "ds18b20":
             sensor_file = params["sensor_file"]
@@ -68,7 +67,7 @@ def read_sensor_data(sensor_type, params):
             }
 
     except Exception as e:
-        print(f"[ERROR] Kunde inte läsa {sensor_type}: {e}")
+        print(f"[ERROR] Could not read {sensor_type}: {e}")
     return None
 
 def publish_discovery(client, section, cfg, hostname):
@@ -132,7 +131,7 @@ def on_connect_factory(cfg, hostname):
                 if section.startswith("sensor_"):
                     publish_discovery(client, section, cfg, hostname)
         else:
-            print("[MQTT] Koppling misslyckades:", mqtt.connack_string(rc))
+            print("[MQTT] Connection failed:", mqtt.connack_string(rc))
     return _on_connect
 
 def main(config_file):
@@ -159,11 +158,11 @@ def main(config_file):
                     topic = params.get("topic", f"{hostname}/{format_device_name(params['device_name'])}/state")
                     payload = json.dumps(data)
                     client.publish(topic, payload)
-                    print(f"[MQTT] Publiserade till {topic}: {payload}")
+                    print(f"[MQTT] Published to {topic}: {payload}")
             time.sleep(interval)
 
     except KeyboardInterrupt:
-        print("Avslutar…")
+        print("Exiting…")
     finally:
         client.disconnect()
 
