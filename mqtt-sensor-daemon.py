@@ -62,7 +62,7 @@ def read_sensor_data(sensor_type, params):
             else:
                 val = float(content)
                 temp = val / 1000.0 if abs(val) > 170 else val
-            return {"temperature": round(temp, 2)}
+            return {"temperature": round(temp, 1)}
 
         elif sensor_type == "dht22":
             bcm = int(params.get("pin", 4))
@@ -79,7 +79,8 @@ def read_sensor_data(sensor_type, params):
                     h = res.get("humidity")
                     if t is not None and h is not None:
                         return {
-                            "temperature": round(float(t), 2), "humidity": round(float(h), 2)
+                            "temperature": round(float(t), 1), 
+                            "humidity": round(float(h), 1)
                         }
                 return None
             except Exception as e:
@@ -92,9 +93,9 @@ def read_sensor_data(sensor_type, params):
             i2c = busio.I2C(board.SCL, board.SDA)
             sensor = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=addr)
             return {
-                "temperature": round(float(sensor.temperature), 2),
-                "humidity": round(float(sensor.relative_humidity), 2),
-                "pressure": round(float(sensor.pressure), 2),
+                "temperature": round(float(sensor.temperature), 1),
+                "humidity": round(float(sensor.relative_humidity), 1),
+                "pressure": round(float(sensor.pressure), 1),
             }
 
         else:
