@@ -63,20 +63,40 @@ def read_sensor_data(sensor_type, params):
                 "temperature": round(temp, 2)
             }
 
-
         elif sensor_type == "dht22":
             bcm = int(params.get("pin", 4))
+            print("[DHT22] {} configured on BCM{}".format(params.get("device_name","<unnamed>"), bcm), flush=True)
+
             if bcm not in _DHT_CACHE:
-                _DHT_CACHE[bcm] = adafruit_dht.DHT22(_board_pin_from_bcm(bcm), use_pulseio=False)
-            dht = _DHT_CACHE[bcm]
-            temp = dht.temperature
-            hum = dht.humidity
-            if temp is None or hum is None:
-                return None
-            return {
-                "temperature": round(float(temp), 2),
-                "humidity": round(float(hum), 2)
-            }
+                d = adafruit_dht.DHT22(_board_pin_from_bcm(bcm), use_pulseio=False)
+                _DHT_CACHE[bcm] = {"dev": d, "last": 0.0}
+                print("[DHT22] init on BCM{}".format(bcm), flush=True)
+                time.sleep(1.5)
+
+            dht = _DHT_CACHE[bcm]["dev"]
+            delta = time.time() - _DHT_CACHE[bcm]["last"]
+            if delta < 2.0:
+                time.sleep(2.0 - delta)
+
+            for i in range(6):
+                try:
+                    t = dht.temperature
+                    h = dht.humidity
+                    print("[DHT22] try {} BCM{} -> T={} H={}".format(i+1, bcm, t, h), flush=True)
+                    if (
+                        t is not None and h is not None
+                        and -40.0 <= float(t) <= 85.0
+                        and 0.0 <= float(h) <= 100.0
+                    ):
+                        _DHT_CACHE[bcm]["last"] = time.time()
+                        return {
+                            "temperature": round(float(t), 2),
+                            "humidity": round(float(h), 2)
+                        }
+                except RuntimeError:
+                    time.sleep(0.8)
+                    continue
+            return None
 
         elif sensor_type == "bme280":
             addr = int(params.get("i2c_address", "0x76"), 0)
@@ -88,9 +108,13 @@ def read_sensor_data(sensor_type, params):
                 "pressure": round(sensor.pressure, 2)
             }
 
+        else:
+            print("[WARN] Unkown sensor type: {}".format(sensor_type), flush=True)
+            return None
+
     except Exception as e:
-        print(f"[ERROR] Could not read {sensor_type}: {e}")
-    return None
+        print("[ERROR] Could not read sensor {}: {}".format(sensor_type, e), flush=True)
+        return None
 
 def publish_discovery(client, section, cfg, hostname):
     params = cfg[section]
