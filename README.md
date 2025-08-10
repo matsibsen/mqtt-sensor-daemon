@@ -4,7 +4,8 @@ Publishes data from Raspberry Pi–connected sensors to MQTT and advertises them
 Supported sensors (current script):
 
 - **DS18B20** (1-Wire)
-- **DHT22** (via CircuitPython: `adafruit-circuitpython-dht`)
+- **DHT22** (via pigpio: `pigpio_dht`)
+  - NB: Needs pigpio service running, doesn't work on RPI 5
 - **BME280** (I²C: `adafruit-circuitpython-bme280`)
 
 ---
