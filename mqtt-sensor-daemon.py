@@ -4,10 +4,11 @@ import json
 import time
 import socket
 import configparser
-import re, unicodedata
+import re
+import unicodedata
 
 import paho.mqtt.client as mqtt
-import adafruit_dht
+from pigpio_dht import DHT22 as PIGPIO_DHT22
 import board, busio, adafruit_bme280
 
 _DHT_CACHE = {}
@@ -27,8 +28,6 @@ def read_config(config_file):
     cfg.read(config_file)
     return cfg
 
-def _board_pin_from_bcm(bcm_pin):
-    return getattr(board, f"D{int(bcm_pin)}")
 
 def build_device(cfg, hostname):
     dev = cfg["DEVICE"] if "DEVICE" in cfg else {}
@@ -37,15 +36,19 @@ def build_device(cfg, hostname):
     manufacturer = dev.get("manufacturer", "Your Manufacturer")
     identifiers = [x.strip() for x in dev.get("identifiers", hostname).split(",")]
     sw_version = dev.get("sw_version", "").strip()
+
     d = {
         "identifiers": identifiers,
         "name": name,
         "model": model,
-        "manufacturer": manufacturer
+        "manufacturer": manufacturer,
     }
     if sw_version:
         d["sw_version"] = sw_version
     return d
+
+def _board_pin_from_bcm(bcm_pin):
+    return getattr(board, f"D{int(bcm_pin)}")
 
 def read_sensor_data(sensor_type, params):
     try:
@@ -59,38 +62,49 @@ def read_sensor_data(sensor_type, params):
             else:
                 val = float(content)
                 temp = val / 1000.0 if abs(val) > 170 else val
-            return {
-                "temperature": round(temp, 2)
-            }
-
+            return {"temperature": round(temp, 2)}
 
         elif sensor_type == "dht22":
             bcm = int(params.get("pin", 4))
-            if bcm not in _DHT_CACHE:
-                _DHT_CACHE[bcm] = adafruit_dht.DHT22(_board_pin_from_bcm(bcm), use_pulseio=False)
-            dht = _DHT_CACHE[bcm]
-            temp = dht.temperature
-            hum = dht.humidity
-            if temp is None or hum is None:
+            print("[DHT22] {} on BCM{}".format(params.get("device_name", "<unnamed>"), bcm), flush=True)
+            try:
+                if bcm not in _DHT_CACHE:
+                    _DHT_CACHE[bcm] = PIGPIO_DHT22(bcm)
+                    print("[DHT22] init BCM{}".format(bcm), flush=True)
+                    time.sleep(0.5)
+                sensor = _DHT_CACHE[bcm]
+                res = sensor.sample(samples=5)
+                if res and res.get("valid"):
+                    t = res.get("temp_c")
+                    h = res.get("humidity")
+                    if t is not None and h is not None:
+                        return {
+                            "temperature": round(float(t), 2), "humidity": round(float(h), 2)
+                        }
                 return None
-            return {
-                "temperature": round(float(temp), 2),
-                "humidity": round(float(hum), 2)
-            }
+            except Exception as e:
+                print("[ERROR] DHT22 (pigpio) BCM{}: {}".format(bcm, e), flush=True)
+                _DHT_CACHE.pop(bcm, None)
+                return None
 
         elif sensor_type == "bme280":
             addr = int(params.get("i2c_address", "0x76"), 0)
             i2c = busio.I2C(board.SCL, board.SDA)
             sensor = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=addr)
             return {
-                "temperature": round(sensor.temperature, 2),
-                "humidity": round(sensor.relative_humidity, 2),
-                "pressure": round(sensor.pressure, 2)
+                "temperature": round(float(sensor.temperature), 2),
+                "humidity": round(float(sensor.relative_humidity), 2),
+                "pressure": round(float(sensor.pressure), 2),
             }
 
+        else:
+            print("[WARN] Okänt sensortyp: {}".format(sensor_type), flush=True)
+            return None
+
     except Exception as e:
-        print(f"[ERROR] Could not read {sensor_type}: {e}")
-    return None
+        print("[ERROR] Kunde inte läsa {}: {}".format(sensor_type, e), flush=True)
+        return None
+
 
 def publish_discovery(client, section, cfg, hostname):
     params = cfg[section]
@@ -98,58 +112,60 @@ def publish_discovery(client, section, cfg, hostname):
     dev_name = format_device_name(params["device_name"])
     state_topic = params.get("topic", f"{hostname}/{dev_name}/state")
     device = build_device(cfg, hostname)
+
     sensor_type = params.get("type", "ds18b20")
-    unique_base = params.get("unique_id", dev_name)
+    unique_base = params.get("unique_id", f"{hostname}_{dev_name}")
+
+    def _pub(payload, obj_suffix):
+        topic = f"{prefix}/sensor/{hostname}/{obj_suffix}/config"
+        client.publish(topic, json.dumps(payload), retain=True)
+        print("[DISCOVERY] {} -> {}".format(topic, payload), flush=True)
 
     if sensor_type in ("dht22", "bme280"):
-        data_keys = ["temperature", "humidity"] if sensor_type == "dht22" else ["temperature", "humidity", "pressure"]
-        for key in data_keys:
+        keys = ["temperature", "humidity"] if sensor_type == "dht22" else ["temperature", "humidity", "pressure"]
+        units = {"temperature": "°C", "humidity": "%", "pressure": "hPa"}
+        dclass = {"temperature": "temperature", "humidity": "humidity", "pressure": "pressure"}
+        for k in keys:
             cfg_msg = {
-                "name": f"{params['device_name']} {key}",
+                "name": "{} {}".format(params["device_name"], k),
                 "state_topic": state_topic,
-                "unit_of_measurement": params.get(f"{key}_unit", {
-                    "temperature": "°C",
-                    "humidity": "%",
-                    "pressure": "hPa"
-                }[key]),
-                "device_class": {
-                    "temperature": "temperature",
-                    "humidity": "humidity",
-                    "pressure": "pressure"
-                }[key],
+                "unit_of_measurement": params.get("{}_unit".format(k), units[k]),
+                "device_class": dclass[k],
                 "state_class": "measurement",
-                "value_template": f"{{{{ value_json.{key} }}}}",
-                "unique_id": f"{unique_base}_{key}",
-                "device": device
+                "value_template": "{{{{ value_json.{} }}}}".format(k),
+                "unique_id": "{}_{}".format(unique_base, k),
+                "device": device,
             }
-            disc_topic = f"{prefix}/sensor/{hostname}/{dev_name}_{key}/config"
-            client.publish(disc_topic, json.dumps(cfg_msg), retain=True)
-            print(f"Discovery → {disc_topic}: {cfg_msg}")
-
+            _pub(cfg_msg, "{}_{}".format(dev_name, k))
     else:
         cfg_msg = {
             "name": params["device_name"],
             "state_topic": state_topic,
+            "device_class": "temperature",
             "unit_of_measurement": params.get("unit_of_measurement", "°C"),
-            "device_class": params.get("device_class", "temperature"),
             "state_class": "measurement",
             "value_template": "{{ value_json.temperature }}",
             "unique_id": unique_base,
-            "device": device
+            "device": device,
         }
-        disc_topic = f"{prefix}/sensor/{hostname}/{dev_name}/config"
-        client.publish(disc_topic, json.dumps(cfg_msg), retain=True)
-        print(f"Discovery → {disc_topic}: {cfg_msg}")
+        _pub(cfg_msg, dev_name)
 
 def on_connect_factory(cfg, hostname):
     def _on_connect(client, userdata, flags, rc):
-        print(f"[MQTT] Connected with result code {rc}")
+        print("[MQTT] Connected with result code {}".format(rc), flush=True)
         if rc == 0:
-            for section in cfg.sections():
-                if section.startswith("sensor_"):
+            sections = [s for s in cfg.sections() if s not in ("MQTT", "MAIN", "DEVICE")]
+            print("[DISCOVERY] sections: {}".format(sections), flush=True)
+            for section in sections:
+                try:
                     publish_discovery(client, section, cfg, hostname)
+                except Exception as e:
+                    print("[ERROR] discovery for {} failed: {}".format(section, e), flush=True)
         else:
-            print("[MQTT] Connection failed:", mqtt.connack_string(rc))
+            try:
+                print("[MQTT] {}".format(mqtt.connack_string(rc)), flush=True)
+            except Exception:
+                pass
     return _on_connect
 
 def main(config_file):
@@ -159,15 +175,17 @@ def main(config_file):
     client = mqtt.Client()
     hostname = get_hostname()
     client.on_connect = on_connect_factory(cfg, hostname)
-    client.username_pw_set(mqtt_cfg["username"], mqtt_cfg["password"])
-    client.connect(mqtt_cfg["host"], int(mqtt_cfg["port"]), keepalive=60)
+    client.enable_logger()
+    if mqtt_cfg.get("username"):
+        client.username_pw_set(mqtt_cfg["username"], mqtt_cfg.get("password"))
+    client.connect(mqtt_cfg["host"], int(mqtt_cfg.get("port", "1883")), keepalive=60)
     client.loop_start()
 
     try:
         interval = int(cfg.get("MAIN", "sleep_interval", fallback="60"))
         while True:
             for section in cfg.sections():
-                if not section.startswith("sensor_"):
+                if section in ("MQTT", "MAIN", "DEVICE"):
                     continue
                 params = cfg[section]
                 typ = params.get("type", "ds18b20")
@@ -176,16 +194,18 @@ def main(config_file):
                     topic = params.get("topic", f"{hostname}/{format_device_name(params['device_name'])}/state")
                     payload = json.dumps(data)
                     client.publish(topic, payload)
-                    print(f"[MQTT] Published to {topic}: {payload}")
+                    print("[MQTT] Published to {}: {}".format(topic, payload), flush=True)
+                else:
+                    print("[WARN] No data from {} ({}) this cycle".format(section, typ), flush=True)
             time.sleep(interval)
-
     except KeyboardInterrupt:
-        print("Exiting…")
+        print("Exiting…", flush=True)
     finally:
+        client.loop_stop()
         client.disconnect()
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python mqtt-sensor-daemon.py config.ini")
-    else:
-        main(sys.argv[1])
+        sys.exit(1)
+    main(sys.argv[1])
