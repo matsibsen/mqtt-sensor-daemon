@@ -158,6 +158,7 @@ Create `/etc/systemd/system/mqtt-sensor-daemon.service`:
 Description=MQTT Sensor Daemon (venv)
 After=network-online.target
 Wants=network-online.target
+Requires=pigpiod.service
 
 [Service]
 Type=simple
@@ -174,6 +175,8 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 ```
+Remove the `Requires=pigpiod.service` line if running on RPI 5 without DHT22 sensor
+
 
 Enable & start:
 ```bash
